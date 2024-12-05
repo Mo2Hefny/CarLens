@@ -3,6 +3,7 @@ import numpy as np
 import imutils
 import os
 from skimage.morphology import binary_erosion, binary_dilation, binary_closing, skeletonize, thin, square, disk, closing, opening
+import queue
 
 def save_image(image, filename):
     cv2.imwrite(filename, image)
@@ -72,7 +73,8 @@ def image_consumer(image_queue, index):
             print(f"Processing frame {frame_count}...")
             process_frame(frame, frame_count,index)
             print(f"Frame {frame_count} processed and saved.")
-        except image_queue.empty:
+        except queue.Empty:
             print("Queue is empty, waiting for more frames.")
+            break
         except Exception as e:
             print(f"Error processing frame: {e}")
