@@ -7,7 +7,7 @@ import os
 def main():
     image_queue = Queue()
 
-    producer_process = Process(target=sample_video, args=(image_queue, "dataset/02.mp4"))
+    producer_process = Process(target=sample_video, args=(image_queue, "dataset/01.mp4"))
     producer_process.start()
 
     consumer_processes = []
