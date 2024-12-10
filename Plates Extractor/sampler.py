@@ -2,7 +2,7 @@ import cv2
 import os
 import argparse
 
-def sample_video(image_queue, video_source=0, rate=0.25):
+def sample_video(image_queue, video_source=0, rate=0.1):
     cap = cv2.VideoCapture(video_source)
     frame_rate = cap.get(cv2.CAP_PROP_FPS)
     frame_count = 0
