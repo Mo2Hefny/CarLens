@@ -236,6 +236,12 @@ async def process_video_data_from_file(websocket, video_file_path):
         end_time = time.time()
         logger.info(
             f"Video processing completed in {end_time - start_time:.2f} seconds")
+        if predictions_list:
+            result = vote_for_correct_string(predictions_list)
+            await websocket.send_json({
+            "type": "PREDICTIONS",
+            "predictions": [result]
+            })
 
     except Exception as e:
         logger.error(f"Error processing video file {video_file_path}: {e}")
