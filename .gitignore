@@ -1,3 +1,4 @@
+backend/*.png
 node_modules
 uploads
 __pycache__

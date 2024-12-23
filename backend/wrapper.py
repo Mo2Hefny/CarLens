@@ -41,7 +41,7 @@ def process_frame(frame, frame_count):
 
         for i, (x, y, w, h) in enumerate(locations):
 
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 0), 2)
             cropped_image = frame[y:y + h, x:x + w]
             try:
                 predictions = OCR(cropped_image)
@@ -52,6 +52,7 @@ def process_frame(frame, frame_count):
                     print("found predictions", predictions_str)
             except:
                 print("Error in frame prediction")
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
             # output_path = os.path.join(
             #     output_dir, f"frame_{frame_count}_{w}_{h}_contour_{i}.png")
             # cv2.imwrite(output_path, cropped_image)

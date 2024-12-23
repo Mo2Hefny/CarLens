@@ -183,7 +183,7 @@ const VideoDropZone = ({ plates, onDetectedPlates }) => {
   };
 
   const handleSliderChange = (event, newValue) => {
-    if (newValue > receivedFrameIndex.current) return;
+    if (newValue >= receivedFrameIndex.current) return;
     frameIndex.current = newValue;
     setCurrentFrame(videoFrames.current[newValue]);
   };

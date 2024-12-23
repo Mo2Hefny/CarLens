@@ -27,30 +27,46 @@ const App = () => {
         });
         return !isDuplicate;
       });
-  
+
       // Add timestamps to new plates
       newPlates.forEach((entry) => {
         entry.timestamp = videoTime;
       });
-  
+
       // Update detected plates for immediate UI display
       setDetectedPlates(plate);
-  
+
       // Return the updated history
       return [...prevHistory, ...newPlates];
     });
-  }
+  };
 
   return (
     <Box sx={{ p: 4 }}>
       {/* Header */}
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+      <Box
+        display="flex"
+        justifyContent="space-between"
+        alignItems="center"
+        mb={2}
+      >
         <Typography variant="h5" fontWeight="bold">
           CarLens
         </Typography>
-        <Typography variant="body1" color="primary">
+        <Button
+          variant="contained"
+          sx={{
+            backgroundColor: "#636AE8",
+            "&:hover": {
+              backgroundColor: "#303f9f",
+            },
+          }}
+          onClick={() =>
+            (window.open("https://github.com/Mo2Hefny/CarLens", "_blank"))
+          }
+        >
           GitHub
-        </Typography>
+        </Button>
       </Box>
 
       {/* Main Content */}
@@ -69,36 +85,36 @@ const App = () => {
         >
           <VideoDropZone
             plates={detectedPlates}
-            onDetectedPlates={addDetectedPlates} 
-            />
+            onDetectedPlates={addDetectedPlates}
+          />
         </Box>
 
         {/* Side Panel */}
-        <Box sx={{
-          boxSizing: "border-box",
-          maxWidth: 300,
-          width: "100%",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "stretch",
-          padding: 2,
-          gap: 1,
-        }}>
+        <Box
+          sx={{
+            boxSizing: "border-box",
+            maxWidth: 300,
+            width: "100%",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "stretch",
+            padding: 2,
+            gap: 1,
+          }}
+        >
           {/* Detected Plate Section */}
           <Box>
             <Typography variant="h6" fontWeight="bold" gutterBottom>
               Detected Plate
             </Typography>
             <Box display="flex" flexDirection="column" gap={1} mb={2}>
-              {
-                detectedPlates.map((entry, index) => (
-                  <DetectedPlate
-                    key={index}
-                    plateNumber={entry.plate}
-                    timestamp={entry.timestamp}
-                  />
-                ))
-              }
+              {detectedPlates.map((entry, index) => (
+                <DetectedPlate
+                  key={index}
+                  plateNumber={entry.plate}
+                  timestamp={entry.timestamp}
+                />
+              ))}
             </Box>
           </Box>
 
@@ -115,7 +131,7 @@ const App = () => {
                   key={index}
                   plateNumber={entry.plate}
                   timestamp={entry.timestamp}
-                  />
+                />
               ))}
             </Box>
           </Box>
