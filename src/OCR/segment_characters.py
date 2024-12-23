@@ -38,7 +38,7 @@ def preprocess_license_plate(image):
     return binary_img
 
 
-def extract_character_contours(binary_img, numChars=10):
+def extract_character_contours(binary_img, numChars=6):
     """
     Extract contours from the binary image and filter them based on size.
         Parameters: 
@@ -51,7 +51,7 @@ def extract_character_contours(binary_img, numChars=10):
     logging.info("Define estimated dimensions for character contours")
     height, width = binary_img.shape
     dimensions = {
-        "min_height": height / 2,
+        "min_height": height / 3,
         "max_height": height / 1,
         "min_width": width / (numChars * 2),
         "max_width": width / 3
