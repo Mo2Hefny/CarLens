@@ -41,25 +41,6 @@ const App = () => {
     });
   }
 
-  const handleVideoUpload = (event) => {
-    event.preventDefault();
-    const file = event.dataTransfer.files[0];
-    if (file && file.type.startsWith("video/")) {
-      const url = URL.createObjectURL(file);
-      setVideoSrc(url);
-    } else {
-      alert("Please drop a valid video file.");
-    }
-  };
-
-  const handleFileSelect = (event) => {
-    const file = event.target.files[0];
-    if (file && file.type.startsWith("video/")) {
-      const url = URL.createObjectURL(file);
-      setVideoSrc(url);
-    }
-  };
-
   return (
     <Box sx={{ p: 4 }}>
       {/* Header */}
@@ -88,10 +69,7 @@ const App = () => {
         >
           <VideoDropZone
             plates={detectedPlates}
-            videoSrc={videoSrc}
-            onDrop={handleVideoUpload}
-            onFileSelect={handleFileSelect}
-            onSocketRecieve={addDetectedPlates} 
+            onDetectedPlates={addDetectedPlates} 
             />
         </Box>
 

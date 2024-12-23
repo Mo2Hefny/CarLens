@@ -1,11 +1,15 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Box, Typography, Button } from "@mui/material";
 
-const VideoDropZone = ({ videoSrc, onDrop, onFileSelect, plates, onSocketRecieve }) => {
+const VideoDropZone = ({ plates, onDetectedPlates }) => {
+  const [videoSrc, setVideoSrc] = useState("");
   const [dragging, setDragging] = useState(false);
-  const canvasRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
   const videoRef = useRef(null);
   const wsRef = useRef(null);
+  const mediaSourceRef = useRef(new MediaSource());
+  const sourceBufferRef = useRef(null);
+  const bufferQueue = useRef([]);
 
   useEffect(() => {
     const ws = new WebSocket("ws://127.0.0.1:8000/ws");
@@ -16,11 +20,62 @@ const VideoDropZone = ({ videoSrc, onDrop, onFileSelect, plates, onSocketRecieve
     };
 
     ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      console.log("License Plate Data:", JSON.parse(event.data));
-      const video = videoRef.current;
-      if (video) {
-        onSocketRecieve(data.plates, video.currentTime);
+      console.log("WebSocket message received of type:", typeof event.data);
+      if (event.data instanceof Blob) {
+        console.log("Received video frame as Blob");
+        event.data.arrayBuffer().then((arrayBuffer) => {
+          const mediaSource = mediaSourceRef.current;
+          const sourceBuffer = sourceBufferRef.current;
+      
+          console.log("MediaSource state:", mediaSource.readyState);
+          console.log("SourceBuffer status - updating:", sourceBuffer?.updating);
+      
+          // Check if the MediaSource is ready and the SourceBuffer can accept data
+          if (mediaSource.readyState === "open" && sourceBuffer) {
+            try {
+              // Log for debugging
+              console.log(
+                "Appending buffer of size:", arrayBuffer.byteLength,
+                "First 50 bytes:", new Uint8Array(arrayBuffer).slice(0, 50)
+              );
+              bufferQueue.current.push(arrayBuffer);
+              appendBuffer();
+              // Append buffer
+            } catch (error) {
+              console.error("Error appending buffer:", error);
+      
+              // Handle MediaSource errors (e.g., invalid MIME type or buffer overflow)
+              if (error.name === "QuotaExceededError") {
+                console.warn("QuotaExceededError: Clearing SourceBuffer");
+                try {
+                  sourceBuffer.abort(); // Reset buffer operations
+                  sourceBuffer.remove(0, sourceBuffer.buffered.end(0)); // Remove old data
+                } catch (removeError) {
+                  console.error("Error removing SourceBuffer data:", removeError);
+                }
+              }
+            }
+          } else {
+            console.warn(
+              "Cannot append buffer. MediaSource state:",
+              mediaSource.readyState,
+              "SourceBuffer status - updating:", sourceBuffer?.updating
+            );
+          }
+        }).catch((error) => {
+          console.error("Error reading Blob as ArrayBuffer:", error);
+        });
+      } else {
+        const data = JSON.parse(event.data);
+        console.log("WebSocket message received:", data);
+
+        if (data.type === "plate_detection") {
+          onDetectedPlates(data);
+        } else if (data.type === "UPLOAD_COMPLETED") {
+          console.log("Upload complete to filename:", data.filename);
+          setUploading(false);
+          setVideoSrc(`/media/${data.filename}`);
+        }
       }
     };
 
@@ -33,61 +88,138 @@ const VideoDropZone = ({ videoSrc, onDrop, onFileSelect, plates, onSocketRecieve
     };
 
     return () => {
-      ws.close();
+      if (wsRef.current) {
+        wsRef.current.close(1000, "Component unmounted");
+      }
     };
   }, []);
 
-  // Capture video frame and send it via WebSocket
-  const captureFrameAndSend = () => {
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-
-    if (video && canvas) {
-      const context = canvas.getContext("2d");
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-
-      // Draw video frame onto the canvas
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-      // Send the canvas frame to the backend
-      const imageData = canvas.toDataURL("image/jpeg");
-      if (wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(imageData);
+  useEffect(() => {
+    if (videoSrc) {
+      const mediaSource = mediaSourceRef.current;
+      const videoElement = videoRef.current;
+      console.log("Setting up MediaSource object");
+  
+      // Log the MIME type to make sure it's correct
+      const mimeType = 'video/mp4; codecs="avc1.42E01E"';  // Replace with your actual MIME type
+      console.log("Using MIME type:", mimeType);
+  
+      try {
+        // Set the video source to the MediaSource object
+        videoElement.src = URL.createObjectURL(mediaSource);
+  
+        mediaSource.addEventListener("sourceopen", () => {
+          // Adding a SourceBuffer for video (vp8 or h264 depending on your backend format)
+          sourceBufferRef.current = mediaSource.addSourceBuffer(mimeType);
+          console.log("SourceBuffer created:", sourceBufferRef.current);
+          sourceBufferRef.current.addEventListener("updateend", appendBuffer);
+        });
+  
+        mediaSource.addEventListener("sourceended", () => {
+          console.log("MediaSource has ended. Recreating...");
+          // recreateMediaSource(); // Handle the closed MediaSource by recreating it
+        });
+  
+      } catch (error) {
+        console.error("Error setting up MediaSource:", error);
       }
+    }
+  }, [videoSrc]);
 
-      // Draw rectangles for plates
-      drawRectangles(context);
+  const appendBuffer = () => {
+    const sourceBuffer = sourceBufferRef.current;
+
+    if (bufferQueue.current.length > 0 && sourceBuffer && !sourceBuffer.updating) {
+      const buffer = bufferQueue.current.shift();
+      try {
+        console.log("Appending buffer of size:", buffer.byteLength);
+        sourceBuffer.appendBuffer(buffer);
+      } catch (error) {
+        console.error("Error appending buffer:", error);
+      }
+    }
+
+    if (bufferQueue.current.length === 0 && mediaSourceRef.current.readyState === "open") {
+      console.log("End of buffer queue. Ending stream.");
+      mediaSourceRef.current.endOfStream();
     }
   };
 
-  const drawRectangles = (context) => {
-    return;
-    plates.forEach((plate) => {
-      const { x, y, width, height } = plate;
-
-      // Draw rectangle
-      context.strokeStyle = "red";
-      context.lineWidth = 2;
-      context.strokeRect(x, y, width, height);
-
-      // Label the plate
-      context.fillStyle = "red";
-      context.font = "16px Arial";
-      context.fillText(plate.plate, x, y - 5); // Adjust label position above the rectangle
+  const recreateMediaSource = () => {
+    const videoElement = videoRef.current;
+    const newMediaSource = new MediaSource();
+    mediaSourceRef.current = newMediaSource;
+  
+    videoElement.src = URL.createObjectURL(newMediaSource);
+  
+    newMediaSource.addEventListener("sourceopen", () => {
+      try {
+        const newSourceBuffer = newMediaSource.addSourceBuffer('video/mp4; codecs="avc1.42E01E"');
+        sourceBufferRef.current = newSourceBuffer;
+        console.log("New SourceBuffer created:", newSourceBuffer);
+      } catch (error) {
+        console.error("Error creating SourceBuffer:", error);
+      }
     });
   };
 
-  // Start capturing frames when the video is playing
-  useEffect(() => {
-    if (videoSrc) {
-      const interval = setInterval(() => {
-        captureFrameAndSend();
-      }, 5000); // Capture every 5 seconds
-
-      return () => clearInterval(interval);
+  const onDrop = (event) => {
+    event.preventDefault();
+    setDragging(false);
+    const file = event.dataTransfer.files[0];
+    if (file & file.type.startsWith("video/")) {
+      handleVideoUpload(file);
     }
-  }, [videoSrc]);
+  };
+
+  const onFileSelect = (event) => {
+    const file = event.target.files[0];
+    if (file && file.type.startsWith("video/")) {
+      handleVideoUpload(file);
+    }
+  };
+
+  const handleVideoUpload = (file) => {
+    setUploading(true);
+
+    const chunkSize = 1024 * 1024; // 1MB chunks
+    let offset = 0;
+
+    const sendChunk = () => {
+      if (offset < file.size) {
+        const chunk = file.slice(offset, offset + chunkSize);
+        const reader = new FileReader();
+
+        reader.onload = function (e) {
+          const chunkData = e.target.result;
+          if (wsRef.current.readyState === WebSocket.OPEN) {
+            wsRef.current.send(
+              JSON.stringify({
+                type: "UPLOAD_CHUNK",
+                chunk: Array.from(new Uint8Array(chunkData)),
+                filename: file.name,
+                offset,
+              })
+            );
+          }
+
+          offset += chunkSize;
+          sendChunk();
+        };
+
+        reader.readAsArrayBuffer(chunk);
+      } else {
+        wsRef.current.send(
+          JSON.stringify({
+            type: "UPLOAD_COMPLETED",
+            filename: file.name,
+          })
+        );
+      }
+    };
+
+    sendChunk();
+  };
 
   return (
     <>
@@ -98,15 +230,24 @@ const VideoDropZone = ({ videoSrc, onDrop, onFileSelect, plates, onSocketRecieve
             style={{
               maxWidth: "100%", // Ensures it scales with the container width
               maxHeight: "100%", // Ensures it scales with the container height
-              width: "100%",     // Make it responsive
-              height: "auto",    // Maintain aspect ratio
+              width: "100%", // Make it responsive
+              height: "auto", // Maintain aspect ratio
             }}
             controls
             autoPlay
-            controlsList="nodownload nofullscreen noremoteplayback"
-            src={videoSrc}
+            // controlsList="nodownload nofullscreen noremoteplayback"
+            // src={videoSrc}
           />
-          <canvas ref={canvasRef} style={{ display: "None", position: "absolute", top: 0, left: 0 }}></canvas>
+          {/* <img
+            src={videoSrc}
+            alt="video"
+            style={{
+              maxWidth: "100%", // Ensures it scales with the container width
+              maxHeight: "100%", // Ensures it scales with the container height
+              width: "100%", // Make it responsive
+              height: "auto", // Maintain aspect ratio
+            }}
+          /> */}
         </>
       ) : (
         <Box
@@ -122,21 +263,18 @@ const VideoDropZone = ({ videoSrc, onDrop, onFileSelect, plates, onSocketRecieve
             borderRadius: "8px",
             position: "relative",
           }}
-          onDrop={() => {
-            setDragging(false);
-            onDrop();
-          }}
+          onDrop={onDrop}
           onDragEnter={() => setDragging(true)}
           onDragLeave={() => setDragging(false)}
         >
           <Box textAlign="center">
-            {dragging ? (
+            {dragging || uploading ? (
               <Typography
                 variant="h6"
                 mb={2}
                 sx={{ color: "#565e6c", fontWeight: "bold" }}
               >
-                Drop the video here
+                {uploading ? "Uploading..." : "Drop the video here"}
               </Typography>
             ) : (
               <>

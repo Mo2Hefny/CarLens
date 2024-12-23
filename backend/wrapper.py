@@ -92,17 +92,18 @@ def start_processing():
     Thread(target=process_video_stream, args=(video_path, label_status)).start()
 
 
-video_path = None
-root = Tk()
-root.title("Car Plate Detection")
-root.geometry("400x250")
+if __name__ == "__main__":
+    video_path = None
+    root = Tk()
+    root.title("Car Plate Detection")
+    root.geometry("400x250")
 
-label_status = StringVar()
-label_status.set("Please select a video to process.")
+    label_status = StringVar()
+    label_status.set("Please select a video to process.")
 
-Label(root, text="Car Plate Detection", font=("Arial", 16)).pack(pady=10)
-Button(root, text="Select Video", command=select_video, width=20).pack(pady=5)
-Button(root, text="Start Processing", command=start_processing, width=20).pack(pady=5)
-Label(root, textvariable=label_status, wraplength=300, font=("Arial", 12)).pack(pady=10)
+    Label(root, text="Car Plate Detection", font=("Arial", 16)).pack(pady=10)
+    Button(root, text="Select Video", command=select_video, width=20).pack(pady=5)
+    Button(root, text="Start Processing", command=start_processing, width=20).pack(pady=5)
+    Label(root, textvariable=label_status, wraplength=300, font=("Arial", 12)).pack(pady=10)
 
-root.mainloop()
+    root.mainloop()

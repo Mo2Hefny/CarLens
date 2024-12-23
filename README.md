@@ -9,5 +9,5 @@ npm start
 Run the FastAPI server using uvicorn. Use the following command in your terminal:
 
 ```bash
-uvicorn app:app --host 127.0.0.1 --port 8000
+uvicorn app:app --host 127.0.0.1 --port 8000 --log-level info
 ```
