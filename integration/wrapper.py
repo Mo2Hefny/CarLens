@@ -5,24 +5,26 @@ import imutils
 from tkinter import Tk, filedialog, Button, Label, StringVar
 from threading import Thread
 
-def process_frame(frame, frame_count, index):
+KERNEL = np.ones((1, 20), np.uint8)
+MIN_AREA = 500
+
+def process_frame(frame, frame_count):
     try:
-        print(f"Starting processing for frame {frame_count}...")
         frame = frame[50:, :]
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        smoothed_image = cv2.bilateralFilter(gray, 35, 120, 120)
-        edged_image = cv2.Canny(smoothed_image, 140, 190)
 
-        kernel = np.ones((1, 20), np.uint8)
-        dilated_image = cv2.dilate(edged_image, kernel, iterations=1)
-        eroded_image = cv2.erode(dilated_image, kernel, iterations=1)
+        smoothed_image = cv2.bilateralFilter(gray, 15, 50, 50)
+        edged_image = cv2.Canny(smoothed_image, 130, 210)
 
-        keypoints = cv2.findContours(eroded_image.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        dilated_image = cv2.dilate(edged_image, KERNEL, iterations=1)
+
+        keypoints = cv2.findContours(dilated_image.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         contours = imutils.grab_contours(keypoints)
-        contours = sorted(contours, key=cv2.contourArea, reverse=True)
-        location = []
 
+        location = []
         for contour in contours:
+            if cv2.contourArea(contour) < MIN_AREA:
+                continue
             approx = cv2.approxPolyDP(contour, 10, True)
             if len(approx) == 4:
                 x, y, w, h = cv2.boundingRect(approx)
@@ -30,59 +32,49 @@ def process_frame(frame, frame_count, index):
                     roi = edged_image[y:y + h, x:x + w]
                     vertical_edges = cv2.Sobel(roi, cv2.CV_64F, 1, 0, ksize=3)
                     edge_density = np.sum(np.abs(vertical_edges) > 100) / (w * h)
-                    if edge_density > 0.1:
+                    if edge_density > 0.2: # sensitivity of the detection
                         location.append((x, y, w, h))
 
         for (x, y, w, h) in location:
             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
-        print(f"Completed processing for frame {frame_count}.")
         return frame
     except Exception as e:
         print(f"Error processing frame {frame_count}: {e}")
         return None
 
 
-def process_video(video_path, output_path, label_status):
+def process_video_stream(video_path, label_status):
     try:
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             label_status.set("Error: Unable to open video.")
             return
 
-        frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        fps = cap.get(cv2.CAP_PROP_FPS)
-
-        fourcc = cv2.VideoWriter_fourcc(*'XVID')
-        out = cv2.VideoWriter(output_path, fourcc, fps, (frame_width, frame_height))
-
         frame_count = 0
+        skip_frames = 1 
+
         while True:
             ret, frame = cap.read()
             if not ret:
                 break
 
-            processed_frame = process_frame(frame, frame_count, index=1)
-
-            if processed_frame is not None:
-                out.write(processed_frame) 
-
-                cv2.imshow('Processed Video', processed_frame)
+            if frame_count % skip_frames == 0:
+                processed_frame = process_frame(frame, frame_count)
+                if processed_frame is not None:
+                    cv2.imshow('Processed Video Stream', processed_frame)
 
             frame_count += 1
 
-            if cv2.waitKey(1) & 0xFF == ord('q'):  # Press 'q' to exit
+            if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
 
         cap.release()
-        out.release()
-        cv2.destroyAllWindows() 
-        label_status.set(f"Processing complete! Video saved to {output_path}.")
+        cv2.destroyAllWindows()
+        label_status.set("Streaming complete.")
     except Exception as e:
         label_status.set(f"Error: {e}")
         cv2.destroyAllWindows()
-
 
 def select_video():
     global video_path
@@ -96,14 +88,8 @@ def start_processing():
     if not video_path:
         label_status.set("Please select a video first!")
         return
-
-    output_path = filedialog.asksaveasfilename(defaultextension=".avi", filetypes=[("AVI Video", "*.avi")])
-    if not output_path:
-        label_status.set("Processing canceled.")
-        return
-
-    label_status.set("Processing...")
-    Thread(target=process_video, args=(video_path, output_path, label_status)).start()
+    label_status.set("Streaming...")
+    Thread(target=process_video_stream, args=(video_path, label_status)).start()
 
 
 video_path = None

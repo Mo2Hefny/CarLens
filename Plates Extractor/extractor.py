@@ -13,18 +13,16 @@ def process_frame(frame, frame_count, index):
 
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-    smoothed_image = cv2.bilateralFilter(gray, 35, 120, 120)
+    smoothed_image = cv2.bilateralFilter(gray, 15, 50, 50)
 
-    edged_image = cv2.Canny(smoothed_image, 140, 190)
+    edged_image = cv2.Canny(smoothed_image, 130, 210)
 
 
     kernel = np.ones((1, 20), np.uint8)
     dilated_image = cv2.dilate(edged_image, kernel, iterations=1)
 
-    eroded_image = cv2.erode(dilated_image, kernel, iterations=1)
 
-
-    keypoints = cv2.findContours(eroded_image.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    keypoints = cv2.findContours(edged_image.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     contours = imutils.grab_contours(keypoints)
     contours = sorted(contours, key=cv2.contourArea, reverse=True)
 
@@ -44,9 +42,9 @@ def process_frame(frame, frame_count, index):
                 roi = edged_image[y:y+h, x:x+w]  # Region of interest
                 vertical_edges = cv2.Sobel(roi, cv2.CV_64F, 1, 0, ksize=3)
                 vertical_edges = np.abs(vertical_edges)
-                edge_density = np.sum(vertical_edges > 100) / (w * h)  # Normalize by area
+                edge_density = np.sum(vertical_edges > 100) / (w * h)
 
-                if edge_density > 0.1:  # Adjust the threshold as needed
+                if edge_density > 0.1:
                     location.append(approx)
 
     if not location:
