@@ -1,10 +1,12 @@
+from collections import Counter
 import cv2
 import os
 import numpy as np
 import imutils
 from tkinter import Tk, filedialog, Button, Label, StringVar
 from threading import Thread
-
+from ocr import OCR
+import skimage.io as io
 KERNEL = np.ones((1, 20), np.uint8)
 MIN_AREA = 500
 output_dir = "processed_images"
@@ -21,7 +23,7 @@ def process_frame(frame, frame_count):
         keypoints = cv2.findContours(
             dilated_image.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         contours = imutils.grab_contours(keypoints)
-
+        predictions_strs = []
         locations = []
         for contour in contours:
             if cv2.contourArea(contour) < MIN_AREA:
@@ -38,17 +40,25 @@ def process_frame(frame, frame_count):
                         locations.append((x, y, w, h))
 
         for i, (x, y, w, h) in enumerate(locations):
+
             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
             cropped_image = frame[y:y + h, x:x + w]
-
-            output_path = os.path.join(
-                output_dir, f"frame_{frame_count}_{w}_{h}_contour_{i}.png")
-            cv2.imwrite(output_path, cropped_image)
-
-        return frame
+            try:
+                predictions = OCR(cropped_image)
+                predictions_str = "".join(predictions)
+                if len(predictions_str) == 6:
+                    predictions_strs.append(predictions_str)
+                    cv2.imwrite(f"output{predictions_str}.png", cropped_image)
+                    print("found predictions", predictions_str)
+            except:
+                print("Error in frame prediction")
+            # output_path = os.path.join(
+            #     output_dir, f"frame_{frame_count}_{w}_{h}_contour_{i}.png")
+            # cv2.imwrite(output_path, cropped_image)
+        return frame, predictions_strs
     except Exception as e:
         print(f"Error processing frame {frame_count}: {e}")
-        return None
+        return None, None
 
 
 def process_video_stream(video_path, label_status):
@@ -60,14 +70,16 @@ def process_video_stream(video_path, label_status):
 
         frame_count = 0
         skip_frames = 1
-
+        combined_predictions = []
         while True:
             ret, frame = cap.read()
             if not ret:
                 break
 
             if frame_count % skip_frames == 0:
-                processed_frame = process_frame(frame, frame_count)
+                processed_frame, predictions = process_frame(
+                    frame, frame_count)
+                combined_predictions.extend(predictions)
                 if processed_frame is not None:
                     cv2.imshow('Processed Video Stream', processed_frame)
 
