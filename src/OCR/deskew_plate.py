@@ -83,6 +83,7 @@ def deskew_img(cropped_img, contour):
         Returns:
             Deskewd image of plate
     """
+
     if contour is None:
         logging.warning("No contour was found")
         return cropped_img
@@ -96,6 +97,8 @@ def deskew_img(cropped_img, contour):
 
     logging.info("finding the rotation angle")
     angle = find_rotation_angle(left_x, right_x, left_y, right_y)
+    if angle > 20:
+        return cropped_img
     # width and height (-1) in reverse order
     logging.info("Get center of image as (width/2)& (height/2)")
     image_center = tuple(np.array(cropped_img.shape[1::-1]) / 2)
