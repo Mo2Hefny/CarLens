@@ -38,7 +38,7 @@ def process_frame(frame, frame_count):
         for (x, y, w, h) in location:
             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
-        return frame
+        return frame, location
     except Exception as e:
         print(f"Error processing frame {frame_count}: {e}")
         return None

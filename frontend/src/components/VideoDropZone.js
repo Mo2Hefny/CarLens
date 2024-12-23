@@ -2,14 +2,13 @@ import React, { useState, useEffect, useRef } from "react";
 import { Box, Typography, Button } from "@mui/material";
 
 const VideoDropZone = ({ plates, onDetectedPlates }) => {
-  const [videoSrc, setVideoSrc] = useState("");
+  const videoFrames = useRef([]);
+  const [videoData, setVideoData] = useState({});
+  const [currentFrame, setCurrentFrame] = useState(null);
+  const frameIndex = useRef(0);
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const videoRef = useRef(null);
   const wsRef = useRef(null);
-  const mediaSourceRef = useRef(new MediaSource());
-  const sourceBufferRef = useRef(null);
-  const bufferQueue = useRef([]);
 
   useEffect(() => {
     const ws = new WebSocket("ws://127.0.0.1:8000/ws");
@@ -21,60 +20,27 @@ const VideoDropZone = ({ plates, onDetectedPlates }) => {
 
     ws.onmessage = (event) => {
       console.log("WebSocket message received of type:", typeof event.data);
-      if (event.data instanceof Blob) {
-        console.log("Received video frame as Blob");
-        event.data.arrayBuffer().then((arrayBuffer) => {
-          const mediaSource = mediaSourceRef.current;
-          const sourceBuffer = sourceBufferRef.current;
-      
-          console.log("MediaSource state:", mediaSource.readyState);
-          console.log("SourceBuffer status - updating:", sourceBuffer?.updating);
-      
-          // Check if the MediaSource is ready and the SourceBuffer can accept data
-          if (mediaSource.readyState === "open" && sourceBuffer) {
-            try {
-              // Log for debugging
-              console.log(
-                "Appending buffer of size:", arrayBuffer.byteLength,
-                "First 50 bytes:", new Uint8Array(arrayBuffer).slice(0, 50)
-              );
-              bufferQueue.current.push(arrayBuffer);
-              appendBuffer();
-              // Append buffer
-            } catch (error) {
-              console.error("Error appending buffer:", error);
-      
-              // Handle MediaSource errors (e.g., invalid MIME type or buffer overflow)
-              if (error.name === "QuotaExceededError") {
-                console.warn("QuotaExceededError: Clearing SourceBuffer");
-                try {
-                  sourceBuffer.abort(); // Reset buffer operations
-                  sourceBuffer.remove(0, sourceBuffer.buffered.end(0)); // Remove old data
-                } catch (removeError) {
-                  console.error("Error removing SourceBuffer data:", removeError);
-                }
-              }
-            }
-          } else {
-            console.warn(
-              "Cannot append buffer. MediaSource state:",
-              mediaSource.readyState,
-              "SourceBuffer status - updating:", sourceBuffer?.updating
-            );
-          }
-        }).catch((error) => {
-          console.error("Error reading Blob as ArrayBuffer:", error);
-        });
-      } else {
-        const data = JSON.parse(event.data);
-        console.log("WebSocket message received:", data);
 
-        if (data.type === "plate_detection") {
-          onDetectedPlates(data);
-        } else if (data.type === "UPLOAD_COMPLETED") {
-          console.log("Upload complete to filename:", data.filename);
+      const data = JSON.parse(event.data);
+      console.log("WebSocket message received:", data);
+
+      if (data.type === "plate_detection") {
+        onDetectedPlates(data);
+      } else if (data.type === "UPLOAD_COMPLETED") {
+        console.log("Upload complete to filename:", data.filename);
+      } else if (data.type === "VIDEO_METADATA") {
+        setVideoData(data);
+      } else if (data.type === "VIDEO_FRAME") {
+        const frameIndex = data.frame_count;
+        const imageHex = data.image;
+        const imageBuffer = new Uint8Array(
+          imageHex.match(/.{1,2}/g).map((byte) => parseInt(byte, 16))
+        );
+        const img = new Blob([imageBuffer], { type: "image/jpeg" });
+        const url = URL.createObjectURL(img);
+        videoFrames.current[frameIndex] = url;
+        if (uploading) {
           setUploading(false);
-          setVideoSrc(`/media/${data.filename}`);
         }
       }
     };
@@ -95,73 +61,23 @@ const VideoDropZone = ({ plates, onDetectedPlates }) => {
   }, []);
 
   useEffect(() => {
-    if (videoSrc) {
-      const mediaSource = mediaSourceRef.current;
-      const videoElement = videoRef.current;
-      console.log("Setting up MediaSource object");
-  
-      // Log the MIME type to make sure it's correct
-      const mimeType = 'video/mp4; codecs="avc1.42E01E"';  // Replace with your actual MIME type
-      console.log("Using MIME type:", mimeType);
-  
-      try {
-        // Set the video source to the MediaSource object
-        videoElement.src = URL.createObjectURL(mediaSource);
-  
-        mediaSource.addEventListener("sourceopen", () => {
-          // Adding a SourceBuffer for video (vp8 or h264 depending on your backend format)
-          sourceBufferRef.current = mediaSource.addSourceBuffer(mimeType);
-          console.log("SourceBuffer created:", sourceBufferRef.current);
-          sourceBufferRef.current.addEventListener("updateend", appendBuffer);
-        });
-  
-        mediaSource.addEventListener("sourceended", () => {
-          console.log("MediaSource has ended. Recreating...");
-          // recreateMediaSource(); // Handle the closed MediaSource by recreating it
-        });
-  
-      } catch (error) {
-        console.error("Error setting up MediaSource:", error);
-      }
+    console.log("videoData changed:", videoData);
+    if (videoData && videoData.frame_count) {
+      videoFrames.current = Array(videoData.frame_count).fill(null);
+      frameIndex.current = 0;
     }
-  }, [videoSrc]);
-
-  const appendBuffer = () => {
-    const sourceBuffer = sourceBufferRef.current;
-
-    if (bufferQueue.current.length > 0 && sourceBuffer && !sourceBuffer.updating) {
-      const buffer = bufferQueue.current.shift();
-      try {
-        console.log("Appending buffer of size:", buffer.byteLength);
-        sourceBuffer.appendBuffer(buffer);
-      } catch (error) {
-        console.error("Error appending buffer:", error);
-      }
-    }
-
-    if (bufferQueue.current.length === 0 && mediaSourceRef.current.readyState === "open") {
-      console.log("End of buffer queue. Ending stream.");
-      mediaSourceRef.current.endOfStream();
-    }
-  };
-
-  const recreateMediaSource = () => {
-    const videoElement = videoRef.current;
-    const newMediaSource = new MediaSource();
-    mediaSourceRef.current = newMediaSource;
   
-    videoElement.src = URL.createObjectURL(newMediaSource);
-  
-    newMediaSource.addEventListener("sourceopen", () => {
-      try {
-        const newSourceBuffer = newMediaSource.addSourceBuffer('video/mp4; codecs="avc1.42E01E"');
-        sourceBufferRef.current = newSourceBuffer;
-        console.log("New SourceBuffer created:", newSourceBuffer);
-      } catch (error) {
-        console.error("Error creating SourceBuffer:", error);
+    const intervalId = setInterval(() => {
+      const frames = videoFrames.current;
+      if (frames[frameIndex.current] !== null && frameIndex.current < videoData.frame_count) {
+        console.log("frameIndex.current", frameIndex.current);
+        setCurrentFrame(frames[frameIndex.current]);
+        frameIndex.current += 1;
       }
-    });
-  };
+    }, 1000 / videoData.fps * 2);
+
+    return () => clearInterval(intervalId);
+  }, [videoData]);
 
   const onDrop = (event) => {
     event.preventDefault();
@@ -223,9 +139,9 @@ const VideoDropZone = ({ plates, onDetectedPlates }) => {
 
   return (
     <>
-      {videoSrc ? (
+      {currentFrame ? (
         <>
-          <video
+          {/* <video
             ref={videoRef}
             style={{
               maxWidth: "100%", // Ensures it scales with the container width
@@ -237,9 +153,9 @@ const VideoDropZone = ({ plates, onDetectedPlates }) => {
             autoPlay
             // controlsList="nodownload nofullscreen noremoteplayback"
             // src={videoSrc}
-          />
-          {/* <img
-            src={videoSrc}
+          /> */}
+          <img
+            src={currentFrame}
             alt="video"
             style={{
               maxWidth: "100%", // Ensures it scales with the container width
@@ -247,7 +163,7 @@ const VideoDropZone = ({ plates, onDetectedPlates }) => {
               width: "100%", // Make it responsive
               height: "auto", // Maintain aspect ratio
             }}
-          /> */}
+          />
         </>
       ) : (
         <Box

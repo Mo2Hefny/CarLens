@@ -1,12 +1,10 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+import json
+import concurrent.futures
 import asyncio
-import ffmpeg
-print(ffmpeg.__file__)
 import logging
 import os
 import numpy as np
-from pymp4.parser import Box
-from pymp4.exceptions import BoxNotFound
 import cv2
 from io import BytesIO
 from PIL import Image
@@ -44,13 +42,10 @@ def process_video_data(data):
 def create_mp4_from_bytes(filename, data):
     with open(filename, "wb") as mp4_file:
         for offset, chunk in data:
-            try:
-                chunk_bytes = bytes(chunk)
-                logger.info(f"Processing chunk at offset {offset}, size {len(chunk_bytes)} bytes")
-                mp4_file.seek(offset)
-                mp4_file.write(chunk_bytes)
-            except BoxNotFound:
-                logger.error(f"Invalid box at offset {offset}")
+            chunk_bytes = bytes(chunk)
+            logger.info(f"Processing chunk at offset {offset}, size {len(chunk_bytes)} bytes")
+            mp4_file.seek(offset)
+            mp4_file.write(chunk_bytes)
         logger.info(f"MP4 file {filename} created successfully")
                 
 @app.websocket("/ws")
@@ -117,7 +112,22 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception as e:
         logger.error(f"Error in WebSocket: {e}")
 
-async def process_video_data_from_file(websocket: WebSocket, video_file_path: str):
+async def process_frame_in_thread(websocket, thread_frames, frame_count):
+    """Process a frame in a separate thread."""
+    # Your frame processing logic goes here
+    # Process the frame (if needed)
+    frame = thread_frames[0]
+    processed_frame, location = process_frame(frame, frame_count)
+    
+    # Send all frames to the frontend
+    await send_frame(websocket, processed_frame, frame_count)
+    for index, frame in enumerate(thread_frames[1:], start=1):
+        frame = frame[50:, :]
+        # for (x, y, w, h) in location:
+        #     cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        await send_frame(websocket, frame, frame_count + index)
+
+async def process_video_data_from_file(websocket, video_file_path):
     """Process the video file and stream it as encoded video to the frontend."""
     try:
         # Open the video file using OpenCV
@@ -125,47 +135,68 @@ async def process_video_data_from_file(websocket: WebSocket, video_file_path: st
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = cap.get(cv2.CAP_PROP_FPS) or 30  # Default to 30 FPS if not available
-        logger.info(f"Processing video file {video_file_path}, {width}x{height}, {fps} FPS")
-        # Set up FFmpeg for video encoding
-        process = (
-            ffmpeg
-            .input('pipe:0', format='rawvideo', pix_fmt='bgr24', s=f'{width}x{height}', framerate=fps)
-            .output('pipe:1', format='mp4', codec='libx264', pix_fmt='yuv420p', movflags='frag_keyframe+empty_moov', preset='ultrafast')
-            .global_args('-loglevel', 'error', '-fflags', 'nobuffer')
-            .run_async(pipe_stdin=True, pipe_stdout=True, pipe_stderr=True)
-        )
+        MAX_FRAMES_LEN = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+        await websocket.send_json({
+            "type": "VIDEO_METADATA",
+            "width": width,
+            "height": height,
+            "fps": fps,
+            "frame_count": MAX_FRAMES_LEN
+        })
 
-        logger.info("FFmpeg process started")
-
-        async def read_ffmpeg_output():
-            logger.info("Reading FFmpeg output")
-            try:
-                while True:
-                    chunk = await asyncio.get_event_loop().run_in_executor(None, process.stdout.read, 1024 * 1024)
-                    if not chunk:
-                        break
-                    logger.info(f"Sending chunk of size {len(chunk)} bytes")
-                    await websocket.send_bytes(chunk)
-            except Exception as e:
-                logger.error(f"Error reading FFmpeg output: {e}")
+        # Create a ThreadPoolExecutor
+        import time
+        start_time = time.time()
+        frames_per_thread = 1
+        frame_count = 0
+        threads = []
+        frames = []
         
-        asyncio.create_task(read_ffmpeg_output())
+        # Asynchronously process the video frames
+        asyncio.create_task(get_video_frames(cap, frames))
+        
+        MAX_THREADS = 10
+        while len(frames) > 0 or frame_count < MAX_FRAMES_LEN:
+            if len(threads) < MAX_THREADS and len(frames) > 0:
+                thread_frames = frames[:frames_per_thread]
+                frames = frames[frames_per_thread:]
+                thread = asyncio.create_task(process_frame_in_thread(websocket, thread_frames, frame_count))
+                threads.append(thread)
+                frame_count += len(thread_frames)
+            else:
+                await asyncio.sleep(0.01)
+                threads = [thread for thread in threads if not thread.done()]
 
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                break
+        end_time = time.time()
+        logger.info(f"Video processing completed in {end_time - start_time:.2f} seconds")
 
-            # Process the frame (if needed)
-            # processed_frame = process_frame(frame, 0)
-            # Write the frame to FFmpeg for encoding
-            process.stdin.write(frame.tobytes())
-            # Simulate real-time streaming
-            await asyncio.sleep(1 / fps)
-
-        cap.release()
-        process.stdin.close()
-        await process.wait()
     except Exception as e:
-        print(f"Error processing video file {video_file_path}: {e}")
+        logger.error(f"Error processing video file {video_file_path}: {e}")
 
+
+async def get_video_frames(cap, frames):
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frames.append(frame)
+
+async def send_frame(websocket, frame, frame_count):
+    """Encode and send the frame to the frontend."""
+    try:
+        if frame is not None:
+            # Convert the frame to JPEG format
+            _, buffer = cv2.imencode('.jpg', frame)
+            img_str = buffer.tobytes()
+
+            message = {
+                'type': 'VIDEO_FRAME',
+                'frame_count': frame_count,
+                'image': img_str.hex()  # Convert the image to a hex string for transport
+            }
+
+            # Send the JSON message to the frontend
+            logger.info(f"Sending frame {frame_count}")
+            await websocket.send_json(message)
+    except Exception as e:
+        print(f"Error sending frame: {e}")
