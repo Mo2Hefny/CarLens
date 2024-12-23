@@ -6,6 +6,7 @@ const VideoDropZone = ({ plates, onDetectedPlates }) => {
   const [videoData, setVideoData] = useState({});
   const [currentFrame, setCurrentFrame] = useState(null);
   const frameIndex = useRef(0);
+  const receivedFrameIndex = useRef(0);
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const wsRef = useRef(null);
@@ -21,26 +22,34 @@ const VideoDropZone = ({ plates, onDetectedPlates }) => {
     ws.onmessage = (event) => {
       console.log("WebSocket message received of type:", typeof event.data);
 
-      const data = JSON.parse(event.data);
-      console.log("WebSocket message received:", data);
+      if (event.data instanceof Blob) {
+        const arrayBuffer = event.data;
+        const blob = new Blob([arrayBuffer], { type: 'image/jpeg' });
+        const url = URL.createObjectURL(blob);
+        videoFrames.current[receivedFrameIndex.current] = url;
+        receivedFrameIndex.current += 1;
+      } else {
+        const data = JSON.parse(event.data);
+        console.log("WebSocket message received:", data);
 
-      if (data.type === "plate_detection") {
-        onDetectedPlates(data);
-      } else if (data.type === "UPLOAD_COMPLETED") {
-        console.log("Upload complete to filename:", data.filename);
-      } else if (data.type === "VIDEO_METADATA") {
-        setVideoData(data);
-      } else if (data.type === "VIDEO_FRAME") {
-        const frameIndex = data.frame_count;
-        const imageHex = data.image;
-        const imageBuffer = new Uint8Array(
-          imageHex.match(/.{1,2}/g).map((byte) => parseInt(byte, 16))
-        );
-        const img = new Blob([imageBuffer], { type: "image/jpeg" });
-        const url = URL.createObjectURL(img);
-        videoFrames.current[frameIndex] = url;
-        if (uploading) {
-          setUploading(false);
+        if (data.type === "plate_detection") {
+          onDetectedPlates(data);
+        } else if (data.type === "UPLOAD_COMPLETED") {
+          console.log("Upload complete to filename:", data.filename);
+        } else if (data.type === "VIDEO_METADATA") {
+          setVideoData(data);
+        } else if (data.type === "VIDEO_FRAME") {
+          const frameIndex = data.frame_count;
+          const imageHex = data.image;
+          const imageBuffer = new Uint8Array(
+            imageHex.match(/.{1,2}/g).map((byte) => parseInt(byte, 16))
+          );
+          const img = new Blob([imageBuffer], { type: "image/jpeg" });
+          const url = URL.createObjectURL(img);
+          videoFrames.current[frameIndex] = url;
+          if (uploading) {
+            setUploading(false);
+          }
         }
       }
     };
@@ -66,15 +75,18 @@ const VideoDropZone = ({ plates, onDetectedPlates }) => {
       videoFrames.current = Array(videoData.frame_count).fill(null);
       frameIndex.current = 0;
     }
-  
+
     const intervalId = setInterval(() => {
       const frames = videoFrames.current;
-      if (frames[frameIndex.current] !== null && frameIndex.current < videoData.frame_count) {
+      if (
+        frames[frameIndex.current] !== null &&
+        frameIndex.current < videoData.frame_count
+      ) {
         console.log("frameIndex.current", frameIndex.current);
         setCurrentFrame(frames[frameIndex.current]);
         frameIndex.current += 1;
       }
-    }, 1000 / videoData.fps * 2);
+    }, (1000 / videoData.fps) * 2);
 
     return () => clearInterval(intervalId);
   }, [videoData]);

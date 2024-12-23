@@ -123,8 +123,8 @@ async def process_frame_in_thread(websocket, thread_frames, frame_count):
     await send_frame(websocket, processed_frame, frame_count)
     for index, frame in enumerate(thread_frames[1:], start=1):
         frame = frame[50:, :]
-        # for (x, y, w, h) in location:
-        #     cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        for (x, y, w, h) in location:
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
         await send_frame(websocket, frame, frame_count + index)
 
 async def process_video_data_from_file(websocket, video_file_path):
@@ -189,14 +189,15 @@ async def send_frame(websocket, frame, frame_count):
             _, buffer = cv2.imencode('.jpg', frame)
             img_str = buffer.tobytes()
 
-            message = {
-                'type': 'VIDEO_FRAME',
-                'frame_count': frame_count,
-                'image': img_str.hex()  # Convert the image to a hex string for transport
-            }
+            # message = {
+            #     'type': 'VIDEO_FRAME',
+            #     'frame_count': frame_count,
+            #     'image': img_str.hex()  # Convert the image to a hex string for transport
+            # }
 
-            # Send the JSON message to the frontend
-            logger.info(f"Sending frame {frame_count}")
-            await websocket.send_json(message)
+            # # Send the JSON message to the frontend
+            # logger.info(f"Sending frame {frame_count}")
+            # await websocket.send_json(message)
+            await websocket.send_bytes(img_str)
     except Exception as e:
         print(f"Error sending frame: {e}")
