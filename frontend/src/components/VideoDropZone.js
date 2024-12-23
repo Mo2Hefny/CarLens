@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useRef } from "react";
-import { Box, Typography, Button } from "@mui/material";
+import React, { useState, useEffect, useRef, use } from "react";
+import { Box, Typography, Button, Slider, IconButton } from "@mui/material";
+import PauseIcon from '@mui/icons-material/Pause';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 
 const VideoDropZone = ({ plates, onDetectedPlates }) => {
   const videoFrames = useRef([]);
@@ -9,14 +11,23 @@ const VideoDropZone = ({ plates, onDetectedPlates }) => {
   const receivedFrameIndex = useRef(0);
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const isSliding = useRef(false);
   const wsRef = useRef(null);
+  const reconnectAttempts = useRef(0);
+  const maxReconnectAttempts = 5;
+  const reconnectInterval = 5000;
+  const [connected, setConnected] = useState(false);
+  const isPlaying = useRef(true);
+  const [playEnabled, setPlayEnabled] = useState(true);
 
-  useEffect(() => {
+  const connectWebSocket = () => {
     const ws = new WebSocket("ws://127.0.0.1:8000/ws");
     wsRef.current = ws;
 
     ws.onopen = () => {
       console.log("WebSocket connection established");
+      setConnected(true);
+      reconnectAttempts.current = 0; // Reset reconnection attempts on success
     };
 
     ws.onmessage = (event) => {
@@ -24,7 +35,7 @@ const VideoDropZone = ({ plates, onDetectedPlates }) => {
 
       if (event.data instanceof Blob) {
         const arrayBuffer = event.data;
-        const blob = new Blob([arrayBuffer], { type: 'image/jpeg' });
+        const blob = new Blob([arrayBuffer], { type: "image/jpeg" });
         const url = URL.createObjectURL(blob);
         videoFrames.current[receivedFrameIndex.current] = url;
         receivedFrameIndex.current += 1;
@@ -56,11 +67,32 @@ const VideoDropZone = ({ plates, onDetectedPlates }) => {
 
     ws.onerror = (error) => {
       console.error("WebSocket error:", error);
+      setConnected(false);
     };
 
-    ws.onclose = () => {
-      console.log("WebSocket connection closed");
+    ws.onclose = (event) => {
+      console.log("WebSocket connection closed:", event.reason);
+      setConnected(false);
+      attemptReconnect();
     };
+  };
+
+  const attemptReconnect = () => {
+    if (reconnectAttempts.current < maxReconnectAttempts) {
+      reconnectAttempts.current += 1;
+      console.log(
+        `Attempting to reconnect (${reconnectAttempts.current}/${maxReconnectAttempts})...`
+      );
+      setTimeout(() => {
+        connectWebSocket();
+      }, reconnectInterval);
+    } else {
+      console.error("Max reconnection attempts reached. Could not reconnect.");
+    }
+  };
+
+  useEffect(() => {
+    connectWebSocket();
 
     return () => {
       if (wsRef.current) {
@@ -79,10 +111,11 @@ const VideoDropZone = ({ plates, onDetectedPlates }) => {
     const intervalId = setInterval(() => {
       const frames = videoFrames.current;
       if (
+        !isSliding.current &&
+        isPlaying.current &&
         frames[frameIndex.current] !== null &&
         frameIndex.current < videoData.frame_count
       ) {
-        console.log("frameIndex.current", frameIndex.current);
         setCurrentFrame(frames[frameIndex.current]);
         frameIndex.current += 1;
       }
@@ -149,33 +182,138 @@ const VideoDropZone = ({ plates, onDetectedPlates }) => {
     sendChunk();
   };
 
+  const handleSliderChange = (event, newValue) => {
+    if (newValue > receivedFrameIndex.current) return;
+    frameIndex.current = newValue;
+    setCurrentFrame(videoFrames.current[newValue]);
+  };
+
+  const handlePlayPause = () => {
+    isPlaying.current = !isPlaying.current;
+    const currentPlayEnabled = playEnabled;
+    setPlayEnabled(!currentPlayEnabled);
+  };
+
+  const handleSliderStart = () => {
+    console.log("Slider start");
+    isSliding.current = true;
+  };
+
+  const handleSliderEnd = () => {
+    console.log("Slider end");
+    isSliding.current = false;
+  };
+
+  const calculateTime = () => {
+    const currentSeconds = Math.floor(frameIndex.current / videoData.fps);
+    const currentMinutes = Math.floor(currentSeconds / 60);
+    
+    const totalSeconds = Math.floor(videoData.frame_count / videoData.fps);
+    const totalMinutes = Math.floor(totalSeconds / 60);
+
+    const formatTime = (time) => time.toString().padStart(2, '0');
+    return `${formatTime(currentMinutes)}:${formatTime(currentSeconds)} / ${formatTime(totalMinutes)}:${formatTime(totalSeconds)}`;
+  };
+
   return (
     <>
       {currentFrame ? (
         <>
-          {/* <video
-            ref={videoRef}
-            style={{
-              maxWidth: "100%", // Ensures it scales with the container width
-              maxHeight: "100%", // Ensures it scales with the container height
-              width: "100%", // Make it responsive
-              height: "auto", // Maintain aspect ratio
+          <Box
+            sx={{
+              position: "relative",
+              width: "100%",
+              maxWidth: "100%",
+              margin: "auto",
+              aspectRatio: "16/9",
+              overflow: "hidden",
             }}
-            controls
-            autoPlay
-            // controlsList="nodownload nofullscreen noremoteplayback"
-            // src={videoSrc}
-          /> */}
-          <img
-            src={currentFrame}
-            alt="video"
-            style={{
-              maxWidth: "100%", // Ensures it scales with the container width
-              maxHeight: "100%", // Ensures it scales with the container height
-              width: "100%", // Make it responsive
-              height: "auto", // Maintain aspect ratio
-            }}
-          />
+          >
+            {/* Background Image */}
+            <img
+              src={currentFrame}
+              alt="video"
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                zIndex: 1,
+              }}
+            />
+
+            {/* Slider Overlay */}
+            <Box
+              sx={{
+                position: "absolute",
+                bottom: 16,
+                left: "50%",
+                transform: "translateX(-50%)",
+                zIndex: 2,
+                width: "80%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              {/* Play/Pause Button */}
+              <IconButton onClick={handlePlayPause} sx={{ color: "white" }}>
+                {playEnabled ? <PauseIcon /> : <PlayArrowIcon />}
+              </IconButton>
+
+              {/* Load Bar Slider */}
+              <Box sx={{ flex: 1, position: "relative", mx: 2 }}>
+                <Slider
+                  value={receivedFrameIndex.current}
+                  min={0}
+                  max={videoData.frame_count}
+                  aria-labelledby="continuous-slider"
+                  disabled
+                  sx={{
+                    color: "grey",
+                    height: 3,
+                    "& .MuiSlider-thumb": {
+                      display: "none",
+                    },
+                  }}
+                />
+
+                {/* Interactive Slider */}
+                <Slider
+                  value={frameIndex.current}
+                  min={0}
+                  max={videoData.frame_count}
+                  onChange={handleSliderChange}
+                  onMouseDown={handleSliderStart}
+                  onTouchStart={handleSliderStart}
+                  onDragEnter={handleSliderStart}
+                  onMouseUp={handleSliderEnd}
+                  onTouchEnd={handleSliderEnd}
+                  onDragLeave={handleSliderEnd}
+                  aria-labelledby="continuous-slider"
+                  sx={{
+                    position: "absolute",
+                    left: "50%",
+                    top: "50%",
+                    transform: "translate(-50%, -55%)",
+                    "& .MuiSlider-track": {
+                      color: "inherit",
+                    },
+                    "& .MuiSlider-rail": {
+                      color: "transparent",
+                    },
+                  }}
+                />
+              </Box>
+
+              {/* Time Display */}
+              <Typography variant="body2" sx={{ color: "white" }}>
+                {calculateTime()}
+              </Typography>
+            </Box>
+          </Box>
         </>
       ) : (
         <Box
@@ -196,13 +334,17 @@ const VideoDropZone = ({ plates, onDetectedPlates }) => {
           onDragLeave={() => setDragging(false)}
         >
           <Box textAlign="center">
-            {dragging || uploading ? (
+            {dragging || uploading || !connected ? (
               <Typography
                 variant="h6"
                 mb={2}
                 sx={{ color: "#565e6c", fontWeight: "bold" }}
               >
-                {uploading ? "Uploading..." : "Drop the video here"}
+                {!connected
+                  ? "Connecting to server..."
+                  : uploading
+                  ? "Uploading..."
+                  : "Drop the video here"}
               </Typography>
             ) : (
               <>

@@ -153,25 +153,36 @@ async def process_video_data_from_file(websocket, video_file_path):
         frames = []
         
         # Asynchronously process the video frames
-        asyncio.create_task(get_video_frames(cap, frames))
+        frames_collector_threads = asyncio.create_task(get_video_frames(cap, frames))
         
         MAX_THREADS = 10
         while len(frames) > 0 or frame_count < MAX_FRAMES_LEN:
-            if len(threads) < MAX_THREADS and len(frames) > 0:
-                thread_frames = frames[:frames_per_thread]
-                frames = frames[frames_per_thread:]
-                thread = asyncio.create_task(process_frame_in_thread(websocket, thread_frames, frame_count))
-                threads.append(thread)
-                frame_count += len(thread_frames)
-            else:
-                await asyncio.sleep(0.01)
-                threads = [thread for thread in threads if not thread.done()]
-
+            try:
+                if len(threads) < MAX_THREADS and len(frames) > 0:
+                    thread_frames = frames[:frames_per_thread]
+                    frames = frames[frames_per_thread:]
+                    thread = asyncio.create_task(process_frame_in_thread(websocket, thread_frames, frame_count))
+                    threads.append(thread)
+                    frame_count += len(thread_frames)
+                else:
+                    await asyncio.sleep(0.01)
+                    threads = [thread for thread in threads if not thread.done()]
+            except WebSocketDisconnect:
+                logger.info("WebSocket connection closed")
+                break
+            except Exception as e:
+                logger.error(f"Error processing video frames: {e}")
+        
+        if not frames_collector_threads.done():
+            frames_collector_threads.cancel()
+            
         end_time = time.time()
         logger.info(f"Video processing completed in {end_time - start_time:.2f} seconds")
 
     except Exception as e:
         logger.error(f"Error processing video file {video_file_path}: {e}")
+    finally:
+        cap.release()
 
 
 async def get_video_frames(cap, frames):
@@ -185,19 +196,11 @@ async def send_frame(websocket, frame, frame_count):
     """Encode and send the frame to the frontend."""
     try:
         if frame is not None:
-            # Convert the frame to JPEG format
             _, buffer = cv2.imencode('.jpg', frame)
             img_str = buffer.tobytes()
-
-            # message = {
-            #     'type': 'VIDEO_FRAME',
-            #     'frame_count': frame_count,
-            #     'image': img_str.hex()  # Convert the image to a hex string for transport
-            # }
-
-            # # Send the JSON message to the frontend
-            # logger.info(f"Sending frame {frame_count}")
-            # await websocket.send_json(message)
             await websocket.send_bytes(img_str)
+    except WebSocketDisconnect:
+        logger.info("WebSocket connection closed")
+        raise e
     except Exception as e:
         print(f"Error sending frame: {e}")
