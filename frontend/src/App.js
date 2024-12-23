@@ -13,17 +13,33 @@ import DetectedPlate from "./components/DetectedPlate";
 import VideoDropZone from "./components/VideoDropZone";
 
 const App = () => {
-  const [detectedPlates, setDetectedPlates] = useState([
-    { plate: "AEH65FR", timestamp: "01:33" },
-    { plate: "AXQEF4R", timestamp: "01:30" },
-    { plate: "HGK91LK", timestamp: "01:29" }
-  ]);
-  const [plateHistory, setPlateHistory] = useState([
-    { plate: "AEH65FR", timestamp: "00:52" },
-    { plate: "AETR6FR", timestamp: "00:20" },
-  ]);
-
+  const [detectedPlates, setDetectedPlates] = useState([]);
+  const [plateHistory, setPlateHistory] = useState([]);
   const [videoSrc, setVideoSrc] = useState("");
+
+  const addDetectedPlates = (plate, videoTime) => {
+    setPlateHistory((prevHistory) => {
+      // Filter new plates based on the previous history
+      const newPlates = plate.filter((entry) => {
+        const isDuplicate = prevHistory.some((oldPlate) => {
+          console.log("Comparing:", oldPlate.plate, entry.plate);
+          return oldPlate.plate === entry.plate; // Use strict equality
+        });
+        return !isDuplicate;
+      });
+  
+      // Add timestamps to new plates
+      newPlates.forEach((entry) => {
+        entry.timestamp = videoTime;
+      });
+  
+      // Update detected plates for immediate UI display
+      setDetectedPlates(plate);
+  
+      // Return the updated history
+      return [...prevHistory, ...newPlates];
+    });
+  }
 
   const handleVideoUpload = (event) => {
     event.preventDefault();
@@ -57,28 +73,41 @@ const App = () => {
       </Box>
 
       {/* Main Content */}
-      <Grid container spacing={3}>
+      <Box display="flex" flexDirection="row" justifyContent="center">
         {/* Video Section */}
-        <Grid item xs={12} md={9.8}>
-          <Box
-            sx={{
-              width: "100%",
-              height: "85vh",
-              backgroundColor: "#f5f5f5",
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-              mb: 3,
-            }}
-          >
-            <VideoDropZone videoSrc={videoSrc} onDrop={handleVideoUpload} onFileSelect={handleFileSelect} />
-          </Box>
-        </Grid>
+        <Box
+          sx={{
+            width: "100%",
+            height: "85vh",
+            backgroundColor: "#f5f5f5",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            mb: 3,
+          }}
+        >
+          <VideoDropZone
+            plates={detectedPlates}
+            videoSrc={videoSrc}
+            onDrop={handleVideoUpload}
+            onFileSelect={handleFileSelect}
+            onSocketRecieve={addDetectedPlates} 
+            />
+        </Box>
 
         {/* Side Panel */}
-        <Grid item xs={12} md={2.2}>
+        <Box sx={{
+          boxSizing: "border-box",
+          maxWidth: 300,
+          width: "100%",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "stretch",
+          padding: 2,
+          gap: 1,
+        }}>
           {/* Detected Plate Section */}
-          <Box mb={4}>
+          <Box>
             <Typography variant="h6" fontWeight="bold" gutterBottom>
               Detected Plate
             </Typography>
@@ -95,7 +124,7 @@ const App = () => {
             </Box>
           </Box>
 
-          <Divider sx={{ mb: 3 }} />
+          <Divider />
 
           {/* Plate History Section */}
           <Box>
@@ -128,8 +157,8 @@ const App = () => {
               Download
             </Button>
           </Box> */}
-        </Grid>
-      </Grid>
+        </Box>
+      </Box>
     </Box>
   );
 };

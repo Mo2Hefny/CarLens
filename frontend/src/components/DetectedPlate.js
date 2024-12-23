@@ -6,7 +6,6 @@ const DetectedPlate = ({ plateNumber, timestamp }) => {
   return (
     <Box
       sx={{
-        width: '300px',
         display: 'flex',
         flexDirection: 'row',
         justifyContent: 'space-between',
