@@ -60,12 +60,12 @@ def train(templates, labels):
 
 
 def save_model(model, model_path):
-    joblib.dump(model, model_path)
+    joblib.dump(model, compress=True, path=model_path)
     print(f"Model saved to {model_path}")
 
 
 def main():
-    templates, labels = load_data_from_folder("../../data/characters")
+    templates, labels = load_data_from_folder("data/characters")
     model = train(templates, labels)
     save_model(model, "models/character_recognition_svm.pkl")
 
