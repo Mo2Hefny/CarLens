@@ -7,38 +7,45 @@ from threading import Thread
 
 KERNEL = np.ones((1, 20), np.uint8)
 MIN_AREA = 500
+output_dir = "processed_images"
+
 
 def process_frame(frame, frame_count):
     try:
         frame = frame[50:, :]
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
         smoothed_image = cv2.bilateralFilter(gray, 15, 50, 50)
         edged_image = cv2.Canny(smoothed_image, 130, 210)
-
         dilated_image = cv2.dilate(edged_image, KERNEL, iterations=1)
 
-        keypoints = cv2.findContours(dilated_image.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        keypoints = cv2.findContours(
+            dilated_image.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         contours = imutils.grab_contours(keypoints)
 
-        location = []
+        locations = []
         for contour in contours:
             if cv2.contourArea(contour) < MIN_AREA:
                 continue
             approx = cv2.approxPolyDP(contour, 10, True)
             if len(approx) == 4:
                 x, y, w, h = cv2.boundingRect(approx)
-                if w >= 1.3 * h:
+                if w >= 1.3 * h and w > 80 and h > 20:
                     roi = edged_image[y:y + h, x:x + w]
                     vertical_edges = cv2.Sobel(roi, cv2.CV_64F, 1, 0, ksize=3)
-                    edge_density = np.sum(np.abs(vertical_edges) > 100) / (w * h)
-                    if edge_density > 0.2: # sensitivity of the detection
-                        location.append((x, y, w, h))
+                    edge_density = np.sum(
+                        np.abs(vertical_edges) > 100) / (w * h)
+                    if edge_density > 0.2:
+                        locations.append((x, y, w, h))
 
-        for (x, y, w, h) in location:
+        for i, (x, y, w, h) in enumerate(locations):
             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            cropped_image = frame[y:y + h, x:x + w]
 
-        return frame, location
+            output_path = os.path.join(
+                output_dir, f"frame_{frame_count}_{w}_{h}_contour_{i}.png")
+            cv2.imwrite(output_path, cropped_image)
+
+        return frame
     except Exception as e:
         print(f"Error processing frame {frame_count}: {e}")
         return None
@@ -52,7 +59,7 @@ def process_video_stream(video_path, label_status):
             return
 
         frame_count = 0
-        skip_frames = 1 
+        skip_frames = 1
 
         while True:
             ret, frame = cap.read()
@@ -76,9 +83,11 @@ def process_video_stream(video_path, label_status):
         label_status.set(f"Error: {e}")
         cv2.destroyAllWindows()
 
+
 def select_video():
     global video_path
-    video_path = filedialog.askopenfilename(filetypes=[("Video Files", "*.mp4 *.avi *.mkv")])
+    video_path = filedialog.askopenfilename(
+        filetypes=[("Video Files", "*.mp4 *.avi *.mkv")])
     if video_path:
         label_status.set(f"Selected: {os.path.basename(video_path)}")
 
@@ -89,7 +98,10 @@ def start_processing():
         label_status.set("Please select a video first!")
         return
     label_status.set("Streaming...")
-    Thread(target=process_video_stream, args=(video_path, label_status)).start()
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    Thread(target=process_video_stream, args=(
+        video_path, label_status)).start()
 
 
 if __name__ == "__main__":
@@ -102,8 +114,11 @@ if __name__ == "__main__":
     label_status.set("Please select a video to process.")
 
     Label(root, text="Car Plate Detection", font=("Arial", 16)).pack(pady=10)
-    Button(root, text="Select Video", command=select_video, width=20).pack(pady=5)
-    Button(root, text="Start Processing", command=start_processing, width=20).pack(pady=5)
-    Label(root, textvariable=label_status, wraplength=300, font=("Arial", 12)).pack(pady=10)
+    Button(root, text="Select Video",
+           command=select_video, width=20).pack(pady=5)
+    Button(root, text="Start Processing",
+           command=start_processing, width=20).pack(pady=5)
+    Label(root, textvariable=label_status, wraplength=300,
+          font=("Arial", 12)).pack(pady=10)
 
     root.mainloop()
