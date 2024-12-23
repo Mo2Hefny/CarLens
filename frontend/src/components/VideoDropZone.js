@@ -61,6 +61,9 @@ const VideoDropZone = ({ plates, onDetectedPlates }) => {
           if (uploading) {
             setUploading(false);
           }
+        } else if (data.type === "PREDICTIONS") {
+          console.log("Predictions received:", data.predictions);
+          onDetectedPlates(data.predictions);
         }
       }
     };

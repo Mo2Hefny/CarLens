@@ -7,38 +7,21 @@ import {
   Divider,
   IconButton,
 } from "@mui/material";
-import CloudUploadIcon from "@mui/icons-material/CloudUpload";
-import CloudDownloadIcon from "@mui/icons-material/CloudDownload";
+import DeleteIcon from "@mui/icons-material/Delete";
 import DetectedPlate from "./components/DetectedPlate";
 import VideoDropZone from "./components/VideoDropZone";
 
 const App = () => {
   const [detectedPlates, setDetectedPlates] = useState([]);
-  const [plateHistory, setPlateHistory] = useState([]);
-  const [videoSrc, setVideoSrc] = useState("");
+  const [videoKey, setVideoKey] = useState(0);
 
-  const addDetectedPlates = (plate, videoTime) => {
-    setPlateHistory((prevHistory) => {
-      // Filter new plates based on the previous history
-      const newPlates = plate.filter((entry) => {
-        const isDuplicate = prevHistory.some((oldPlate) => {
-          console.log("Comparing:", oldPlate.plate, entry.plate);
-          return oldPlate.plate === entry.plate; // Use strict equality
-        });
-        return !isDuplicate;
-      });
+  const addDetectedPlates = (plates) => {
+    setDetectedPlates([...detectedPlates, ...plates]);
+  };
 
-      // Add timestamps to new plates
-      newPlates.forEach((entry) => {
-        entry.timestamp = videoTime;
-      });
-
-      // Update detected plates for immediate UI display
-      setDetectedPlates(plate);
-
-      // Return the updated history
-      return [...prevHistory, ...newPlates];
-    });
+  const handleClear = () => {
+    setDetectedPlates([]);
+    setVideoKey((prevKey) => prevKey + 1);
   };
 
   return (
@@ -62,7 +45,7 @@ const App = () => {
             },
           }}
           onClick={() =>
-            (window.open("https://github.com/Mo2Hefny/CarLens", "_blank"))
+            window.open("https://github.com/Mo2Hefny/CarLens", "_blank")
           }
         >
           GitHub
@@ -84,6 +67,7 @@ const App = () => {
           }}
         >
           <VideoDropZone
+            key={videoKey}
             plates={detectedPlates}
             onDetectedPlates={addDetectedPlates}
           />
@@ -111,8 +95,8 @@ const App = () => {
               {detectedPlates.map((entry, index) => (
                 <DetectedPlate
                   key={index}
-                  plateNumber={entry.plate}
-                  timestamp={entry.timestamp}
+                  plateNumber={entry}
+                  timestamp={""}
                 />
               ))}
             </Box>
@@ -121,36 +105,31 @@ const App = () => {
           <Divider />
 
           {/* Plate History Section */}
-          <Box>
-            <Typography variant="h6" fontWeight="bold" gutterBottom>
-              Plate History
-            </Typography>
-            <Box display="flex" flexDirection="column" gap={1} mb={2}>
-              {plateHistory.map((entry, index) => (
-                <DetectedPlate
-                  key={index}
-                  plateNumber={entry.plate}
-                  timestamp={entry.timestamp}
-                />
-              ))}
-            </Box>
-          </Box>
-          {/* <Box display="flex" flexDirection="column" gap={2} alignItems="center" mt="auto">
-            <Button
-              variant="outlined"
-              startIcon={<CloudUploadIcon />}
-              size="small"
-            >
-              Upload
-            </Button>
+          <Box
+            display="flex"
+            flexDirection="column"
+            gap={2}
+            alignItems="center"
+            mt="auto"
+            mb={3}
+          >
             <Button
               variant="contained"
-              startIcon={<CloudDownloadIcon />}
-              size="small"
+              color="error"
+              startIcon={<DeleteIcon />}
+              size="large"
+              sx={{
+                padding: "10px 20px",
+                borderRadius: 1,
+                "&:hover": {
+                  backgroundColor: "rgba(255, 0, 0, 0.7)",
+                },
+              }}
+              onClick={handleClear}
             >
-              Download
+              Clear
             </Button>
-          </Box> */}
+          </Box>
         </Box>
       </Box>
     </Box>
