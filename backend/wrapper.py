@@ -5,8 +5,7 @@ import numpy as np
 import imutils
 from tkinter import Tk, filedialog, Button, Label, StringVar
 from threading import Thread
-from ocr import OCR
-import skimage.io as io
+from OCR.ocr import OCR
 KERNEL = np.ones((1, 20), np.uint8)
 MIN_AREA = 500
 output_dir = "processed_images"
