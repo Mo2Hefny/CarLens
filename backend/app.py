@@ -138,58 +138,45 @@ async def process_frame_in_thread(websocket, thread_frames, frame_count, predict
         await send_frame(websocket, frame, frame_count + index)
 
 
-def vote_for_correct_string(strings, size=6):
-    """
-    Votes for the correct string based on character frequency at each position, with specific rules:
-    - First character must be a digit.
-    - Second, third, and fourth characters must be letters.
-    - Last two characters must be digits and are excluded from the main voting.
+def vote_for_correct_string(strings):
+    # Constraints for each position
+    valid_first = set("123456789")
+    valid_middle = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnoprstuvwxyz")
+    valid_last = set("123456789")
 
-    Parameters:
-    - strings (list of str): The list of strings to evaluate.
-    - size (int): The expected size of the strings (default is 6).
+    # Initialize a list to store the most common character for each position
+    voted_string = []
 
-    Returns:
-    - str: The string with the highest position-wise vote, or None if no valid strings exist.
-    """
-    if not strings:
-        return None
+    # Iterate over each character position (6 positions in total)
+    for i in range(6):
+        # Create a list of valid characters for this position
+        valid_chars = []
 
-    # Filter strings based on the expected size
-    valid_strings = [s for s in strings if len(s) == size]
-    if not valid_strings:
-        return None
+        for string in strings:
+            if i == 0:  # First position: 1-9
+                if string[i] in valid_first:
+                    valid_chars.append(string[i])
+            elif 1 <= i <= 3:  # Next 3 positions: A-Z
+                if string[i] in valid_middle:
+                    valid_chars.append(string[i])
+            elif 4 <= i <= 5:  # Last 2 positions: 1-9
+                if string[i] in valid_last:
+                    valid_chars.append(string[i])
 
-    # Initialize position counters
-    position_counters = [Counter() for _ in range(size)]
+        # Count the frequency of valid characters in this position
+        char_count = Counter(valid_chars)
+        print(valid_chars)
+        # If no valid character is found, pick an empty string or a fallback value
+        if char_count:
+            most_common_char = char_count.most_common(1)[0][0]
+        else:
+            most_common_char = ''  # Default to empty string if no valid character
 
-    # Count character occurrences at each position, respecting the constraints
-    for string in valid_strings:
-        if not string[0].isdigit():  # First character must be a digit
-            continue
-        # Middle 3 must be letters
-        if not all(char.isalpha() for char in string[1:4]):
-            continue
-        # Last 2 must be numbers
-        if not all(char.isdigit() for char in string[4:]):
-            continue
+        # Append the result to the voted string
+        voted_string.append(most_common_char)
 
-        for i, char in enumerate(string):
-            # Exclude the last two digits from the voting process
-            if i >= 4:
-                continue
-            position_counters[i][char] += 1
-
-    # Construct the "voted" string
-    voted_string = ''.join(
-        counter.most_common(1)[0][0] if counter else '?' for counter in position_counters[:4]
-    )
-    # Append the most common numbers for the last two digits
-    last_two_digits = ''.join(
-        Counter(s[i] for s in valid_strings).most_common(1)[0][0]
-        for i in range(4, 6)
-    )
-    return voted_string + last_two_digits
+    # Join the list into a string and return
+    return ''.join(voted_string)
 
 
 async def process_video_data_from_file(websocket, video_file_path):
@@ -219,8 +206,9 @@ async def process_video_data_from_file(websocket, video_file_path):
         frames = []
 
         # Asynchronously process the video frames
-        frames_collector_threads = asyncio.create_task(get_video_frames(cap, frames))
-        
+        frames_collector_threads = asyncio.create_task(
+            get_video_frames(cap, frames))
+
         MAX_THREADS = 10
         predictions_list = []
         while len(frames) > 0 or frame_count < MAX_FRAMES_LEN:
@@ -234,13 +222,14 @@ async def process_video_data_from_file(websocket, video_file_path):
                     frame_count += len(thread_frames)
                 else:
                     await asyncio.sleep(0.01)
-                    threads = [thread for thread in threads if not thread.done()]
+                    threads = [
+                        thread for thread in threads if not thread.done()]
             except WebSocketDisconnect:
                 logger.info("WebSocket connection closed")
                 break
             except Exception as e:
                 logger.error(f"Error processing video frames: {e}")
-        
+
         if not frames_collector_threads.done():
             frames_collector_threads.cancel()
         print("Combined Predictions", predictions_list)
