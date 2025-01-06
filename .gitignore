@@ -4,4 +4,4 @@ uploads
 __pycache__
 processed_images
 my-venv
-*.mp4node_modules
+*.mp4
